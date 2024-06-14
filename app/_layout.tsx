@@ -2,7 +2,7 @@ import { useFonts } from "expo-font";
 import * as SplashScreen from "expo-splash-screen";
 import { useEffect } from "react";
 import "react-native-reanimated";
-import { View, TouchableOpacity, Text } from "react-native";
+import { View, TouchableOpacity, Text, Touchable } from "react-native";
 import { StyleSheet } from "react-native";
 
 import { useState } from "react";
@@ -23,7 +23,7 @@ SplashScreen.preventAutoHideAsync();
 WebBrowser.maybeCompleteAuthSession();
 
 export default function RootLayout() {
-  const [userInfo, setUserInfo] = useState(null);
+  const [userInfo, setUserInfo] = useState<any>(null);
 
   const [request, response, promptAsync] = Google.useAuthRequest({
     clientId: CLIENT_ID,
@@ -33,24 +33,55 @@ export default function RootLayout() {
     SpaceMono: require("../assets/fonts/SpaceMono-Regular.ttf"),
   });
 
-  async function getUserInfo(token: any) {
-    if (!token) return console.log("missing token");
+  async function getUserInfo(token: string) {
+    try {
+      if (!token) throw new Error("Missing token");
+      const response = await fetch(
+        "https://www.googleapis.com/userinfo/v2/me",
+        {
+          headers: { Authorization: `Bearer ${token}` },
+        }
+      );
 
-    console.log("token", token);
+      const user = await response.json();
+      if (!user) throw new Error("No user");
+      await AsyncStorage.setItem("user", JSON.stringify(user));
+      setUserInfo(user);
+    } catch (error) {
+      console.error("Failed to get user info", error);
+    }
   }
 
   async function signInWithGoogle(response: any) {
     try {
-      console.log("response", response);
-      getUserInfo(response.authentication.accessToken);
+      const userJSON = await AsyncStorage.getItem("user");
+
+      if (userJSON) {
+        setUserInfo(JSON.parse(userJSON));
+      } else if (response?.type === "success") {
+        getUserInfo(response.authentication.accessToken);
+      }
     } catch (error) {
-      console.log("Error retrieving user data");
+      console.error("Error retrieving user data");
+    }
+  }
+
+  async function clearUser() {
+    try {
+      setUserInfo(null);
+      await AsyncStorage.removeItem("user");
+    } catch (error) {
+      console.error("Error removing user from storage");
     }
   }
 
   useEffect(() => {
     signInWithGoogle(response);
   }, [response]);
+
+  useEffect(() => {
+    if (userInfo) console.log("User info", userInfo);
+  }, [userInfo]);
 
   useEffect(() => {
     if (loaded) {
@@ -67,12 +98,19 @@ export default function RootLayout() {
       <TouchableOpacity onPress={() => promptAsync()}>
         <Text>Sign In</Text>
       </TouchableOpacity>
+      <TouchableOpacity onPress={() => clearUser()}>
+        <Text>Sign Out</Text>
+      </TouchableOpacity>
+      <View>{userInfo && <Text>{userInfo.email}</Text>}</View>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
+    display: "flex",
+    justifyContent: "center",
+    alignItems: "center",
     padding: 20,
     marginTop: 50,
   },
